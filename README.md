@@ -1,7 +1,8 @@
 # Screen-Recorder-Extension
 ![logo](https://github.com/Keith-Web3/Screen-Recorder-Extension/assets/96974022/973c0bf8-3b19-4aa1-a104-d9c2e4526ddf)
 
-HelpMeOut Extension is a screen recorder Chrome extension that allows you to easily capture and share your screen. It's one of the tasks from the HNG10 internship.
+HelpMeOut Extension is a screen recorder Chrome extension that allows you to easily capture and share your screen. It's one of the tasks from the HNG10 internship. Please read [Usage](#Usage) to see how to start up the extension properly to avoid any errors.
+
 ## Table of Contents
 * [Installation](#Installation)
 * [Usage](#Usage)
