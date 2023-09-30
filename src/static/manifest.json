@@ -23,7 +23,9 @@
         "pause.svg",
         "video-camera.svg",
         "stop.svg",
-        "trash.svg"
+        "trash.svg",
+        "play.svg",
+        "video-slash.svg"
       ],
       "matches": ["<all_urls>"]
     }

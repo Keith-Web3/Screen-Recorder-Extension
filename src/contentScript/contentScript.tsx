@@ -10,35 +10,116 @@ console.log('hello world')
 
 const stop = chrome.runtime.getURL('stop.svg')
 const pause = chrome.runtime.getURL('pause.svg')
+const play = chrome.runtime.getURL('play.svg')
+const cameraDisabled = chrome.runtime.getURL('video-slash.svg')
 const microphone = chrome.runtime.getURL('microphone.svg')
 const camera = chrome.runtime.getURL('video-camera.svg')
 const trash = chrome.runtime.getURL('trash.svg')
 let recordOptions
+let recordInterval: NodeJS.Timeout
+let mediaRecorder: MediaRecorder | null
+let userStream: MediaStream = null
 
 const ContentScript = function () {
   const [isRecording, setIsRecording] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [recordTime, setRecordTime] = useState(0)
+  const [isPaused, setIsPaused] = useState(false)
+  const [isCameraEnabled, setIsCameraEnabled] = useState(false)
 
-  async function startCapture(displayMediaOptions: DisplayMediaStreamOptions) {
-    let captureStream = null
+  async function toggleCamera() {
+    if (userStream) {
+      // If a stream exists, stop it
+      const tracks = userStream.getTracks()
+      tracks.forEach(track => {
+        track.stop()
+      })
+      userStream = null
+      setIsCameraEnabled(false)
+    } else {
+      // If no stream exists, request a new one
+      userStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          width: 1280,
+          height: 720,
+        },
+      })
+      videoRef.current.srcObject = userStream
+      setIsCameraEnabled(true)
+    }
+  }
+
+  const startCapture = async function ({
+    displayMediaOptions,
+    isUserStreamEnabled,
+  }: {
+    displayMediaOptions: DisplayMediaStreamOptions
+    isUserStreamEnabled: boolean
+  }) {
+    let captureStream: MediaStream = null
 
     try {
       captureStream = await navigator.mediaDevices.getDisplayMedia(
         displayMediaOptions
       )
+      if (isUserStreamEnabled) {
+        userStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            width: 1280,
+            height: 720,
+          },
+        })
+        videoRef.current.srcObject = userStream
+        setIsCameraEnabled(true)
+      }
+
       const data = []
-      const mediaRecorder = new MediaRecorder(captureStream)
+      mediaRecorder = new MediaRecorder(captureStream)
+
       mediaRecorder.ondataavailable = function (e) {
         data.push(e.data)
+      }
+      mediaRecorder.onstart = function () {
+        setRecordTime(0)
+        recordInterval = setInterval(() => {
+          setRecordTime(prev => prev + 1)
+        }, 1000)
+      }
+      mediaRecorder.onresume = function () {
+        setIsPaused(false)
+        recordInterval = setInterval(() => {
+          setRecordTime(prev => prev + 1)
+        }, 1000)
+      }
+      mediaRecorder.onpause = function () {
+        clearInterval(recordInterval)
+        setIsPaused(true)
       }
       mediaRecorder.start()
 
       mediaRecorder.onstop = function (e) {
-        videoRef.current.src = URL.createObjectURL(
-          new Blob(data, {
-            type: data[0].type,
+        const tracks = captureStream.getTracks()
+        tracks.forEach(track => {
+          track.stop()
+        })
+        captureStream = null
+        if (userStream) {
+          const userTracks = userStream.getTracks()
+          userTracks.forEach(track => {
+            track.stop()
           })
+          userStream = null
+        }
+        console.log(
+          URL.createObjectURL(
+            new Blob(data, {
+              type: data[0].type,
+            })
+          )
         )
+        clearInterval(recordInterval)
         setIsRecording(false)
       }
     } catch (err) {
@@ -60,19 +141,23 @@ const ContentScript = function () {
     _sendResponse: (response?: any) => void
   ) {
     recordOptions = {
-      video: request.message.isVideoEnabled && {
-        displaySurface: request.message.recordOption,
+      displayMediaOptions: {
+        video: {
+          displaySurface: request.message.recordOption,
+        },
+        audio: request.message.isAudioEnabled && {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 44100,
+          suppressLocalAudioPlayback: true,
+        },
+        surfaceSwitching: 'include',
+        selfBrowserSurface: 'exclude',
+        systemAudio: 'include',
       },
-      audio: request.message.isAudioEnabled && {
-        echoCancellation: true,
-        noiseSuppression: true,
-        sampleRate: 44100,
-        suppressLocalAudioPlayback: true,
-      },
-      surfaceSwitching: 'include',
-      selfBrowserSurface: 'exclude',
-      systemAudio: 'include',
+      isUserStreamEnabled: request.message.isVideoEnabled,
     }
+
     setIsRecording(true)
     console.log('Message received in content script:', request.message)
   }
@@ -85,42 +170,60 @@ const ContentScript = function () {
   useEffect(() => {
     if (!isRecording) return
     ;(async () => {
-      console.log(recordOptions)
       const stream = await startCapture(recordOptions)
 
       console.log(stream)
     })()
   }, [isRecording])
   return isRecording ? (
-    <>
-      <video className="fixed top-0 left-0" controls ref={videoRef} />
-      <motion.div
-        draggable
-        className="flex items-center gap-6 fixed bottom-0 left-0 z-[9999]"
-      >
-        <div className=" w-36 h-36 rounded-full bg-white"></div>
-        <div className="flex items-center bg-[#141414] gap-8 py-4 px-10 h-max rounded-full border-[#BEBEBE] border-[10px]">
-          <time>00:00:00</time>
-          <div className=" w-3 h-3 shadow-[0px_0px_4px_4px_#c0040430] bg-[#C00404] rounded-full"></div>
-          <div className="h-[69px] w-[1px] bg-[#E8E8E8]"></div>
-          <Control img={pause} name="pause" />
-          <Control img={stop} name="stop" />
-          <Control img={camera} name="camera" />
-          <Control img={microphone} name="mic" />
-          <Control
-            onClick={() => setIsRecording(false)}
-            isGray
-            img={trash}
-            name=""
-          />
-        </div>
-      </motion.div>
-    </>
+    <motion.div
+      draggable
+      className="flex items-center gap-6 fixed bottom-0 left-0 z-[9999]"
+    >
+      <video
+        autoPlay
+        playsInline
+        ref={videoRef}
+        className=" w-36 h-36 rounded-full bg-black object-cover scale-x-[-1]"
+      />
+      <div className="flex items-center bg-[#141414] gap-8 py-4 px-10 h-max rounded-full border-[#BEBEBE] border-[10px]">
+        <time>{secondsToHMS(recordTime)}</time>
+        <div className=" w-3 h-3 shadow-[0px_0px_4px_4px_#c0040430] bg-[#C00404] rounded-full"></div>
+        <div className="h-[69px] w-[1px] bg-[#E8E8E8]"></div>
+        <Control
+          onClick={() => {
+            mediaRecorder[isPaused ? 'resume' : 'pause']()
+          }}
+          img={isPaused ? play : pause}
+          name={isPaused ? 'play' : 'pause'}
+        />
+        <Control
+          onClick={() => {
+            mediaRecorder?.stop()
+          }}
+          img={stop}
+          name="stop"
+        />
+        <Control
+          onClick={toggleCamera}
+          img={isCameraEnabled ? camera : cameraDisabled}
+          name="camera"
+        />
+        <Control img={microphone} name="mic" />
+        <Control
+          onClick={() => setIsRecording(false)}
+          isGray
+          img={trash}
+          name=""
+        />
+      </div>
+    </motion.div>
   ) : (
     <></>
   )
 }
 
+// Extra components and helper functions
 const Control = function ({
   img,
   name,
@@ -151,6 +254,19 @@ const Control = function ({
       </p>
     </div>
   )
+}
+
+function secondsToHMS(seconds: number) {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const remainingSeconds = seconds % 60
+
+  // Add leading zeros if needed
+  const formattedHours = String(hours).padStart(2, '0')
+  const formattedMinutes = String(minutes).padStart(2, '0')
+  const formattedSeconds = String(remainingSeconds).padStart(2, '0')
+
+  return `${formattedHours}:${formattedMinutes}:${formattedSeconds}`
 }
 
 export default ContentScript
