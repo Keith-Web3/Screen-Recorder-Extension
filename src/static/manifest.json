@@ -12,7 +12,14 @@
     "default_title": "Click Me",
     "default_popup": "popup.html"
   },
-  "permissions": ["tabs", "bookmarks", "storage", "identity", "activeTab"],
+  "permissions": [
+    "tabs",
+    "bookmarks",
+    "storage",
+    "identity",
+    "activeTab",
+    "scripting"
+  ],
   "background": {
     "service_worker": "background.js"
   },

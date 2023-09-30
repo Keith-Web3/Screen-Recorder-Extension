@@ -158,7 +158,10 @@ const Test = function () {
           chrome.tabs.query(
             { active: true, currentWindow: true },
             function (tabs) {
-              console.log(tabs)
+              chrome.scripting.executeScript({
+                target: { tabId: tabs[0].id },
+                files: ['contentScript.js'],
+              })
               chrome.tabs.sendMessage(tabs[0].id, {
                 message: { isAudioEnabled, isVideoEnabled, recordOption },
               })
