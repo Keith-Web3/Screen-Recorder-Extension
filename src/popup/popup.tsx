@@ -10,6 +10,7 @@ const Test = function () {
   const isScreen = recordOption === 'monitor'
   const [isAudioEnabled, setIsAudioEnabled] = useState(true)
   const [isVideoEnabled, setIsVideoEnabled] = useState(true)
+
   return (
     <div className="min-w-[350px] p-4 font-work">
       <header className="flex items-center justify-between">
@@ -157,14 +158,19 @@ const Test = function () {
         onClick={() => {
           chrome.tabs.query(
             { active: true, currentWindow: true },
-            function (tabs) {
-              chrome.scripting.executeScript({
-                target: { tabId: tabs[0].id },
-                files: ['contentScript.js'],
-              })
-              chrome.tabs.sendMessage(tabs[0].id, {
-                message: { isAudioEnabled, isVideoEnabled, recordOption },
-              })
+            async function (tabs) {
+              chrome.scripting
+                .executeScript({
+                  target: { tabId: tabs[0].id },
+                  files: ['contentScript.js'],
+                })
+                .then(() => {
+                  console.log('ran')
+
+                  chrome.tabs.sendMessage(tabs[0].id, {
+                    message: { isAudioEnabled, isVideoEnabled, recordOption },
+                  })
+                })
             }
           )
         }}

@@ -159,6 +159,7 @@ const ContentScript = function () {
     }
 
     setIsRecording(true)
+    setIsCameraEnabled(request.message.isVideoEnabled)
     console.log('Message received in content script:', request.message)
   }
 
@@ -168,7 +169,10 @@ const ContentScript = function () {
     return () => chrome.runtime.onMessage.removeListener(popupListener)
   }, [])
   useEffect(() => {
-    if (!isRecording) return
+    if (!isRecording) {
+      setIsCameraEnabled(false)
+      return
+    }
     ;(async () => {
       const stream = await startCapture(recordOptions)
 
