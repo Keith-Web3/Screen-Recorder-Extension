@@ -99,7 +99,7 @@ const ContentScript = function () {
       }
       mediaRecorder.start()
 
-      mediaRecorder.onstop = function (e) {
+      mediaRecorder.onstop = async function (e) {
         const tracks = captureStream.getTracks()
         tracks.forEach(track => {
           track.stop()
@@ -115,10 +115,37 @@ const ContentScript = function () {
         console.log(
           URL.createObjectURL(
             new Blob(data, {
-              type: data[0].type,
+              type: 'video/mp4',
             })
           )
         )
+
+        const blobData = new Blob(data, {
+          type: 'video/mp4',
+        })
+        const formData = new FormData()
+
+        formData.append(
+          'video',
+          blobData,
+          `random${+Math.random().toFixed(2) * 1000}.mp4`
+        )
+        console.log(formData)
+        try {
+          const res = await fetch(
+            'https://mediaupload-uk0g.onrender.com/video/upload',
+            {
+              method: 'POST',
+              mode: 'no-cors',
+              body: formData,
+            }
+          )
+          const { url } = await res.json()
+          console.log(url)
+        } catch (err) {
+          console.log(err)
+        }
+
         clearInterval(recordInterval)
         setIsRecording(false)
       }
@@ -146,10 +173,10 @@ const ContentScript = function () {
           displaySurface: request.message.recordOption,
         },
         audio: request.message.isAudioEnabled && {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 44100,
-          suppressLocalAudioPlayback: true,
+          echoCancellation: false,
+          noiseSuppression: false,
+          sampleRate: 22050,
+          suppressLocalAudioPlayback: false,
         },
         surfaceSwitching: 'include',
         selfBrowserSurface: 'exclude',

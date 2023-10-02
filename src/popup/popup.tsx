@@ -1,7 +1,19 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { motion } from 'framer-motion'
 import '../assets/tailwind.css'
+
+// chrome.tabs.query({ active: true, currentWindow: true }, async function (tabs) {
+//   await chrome.scripting.executeScript({
+//     target: { tabId: tabs[0].id },
+//     files: ['contentScript.js'],
+//   })
+//   console.log('ran1')
+
+//   // chrome.tabs.sendMessage(tabs[0].id, {
+//   //   message: { isAudioEnabled, isVideoEnabled, recordOption },
+//   // })
+// })
 
 const Test = function () {
   const [recordOption, setRecordOption] = useState<
@@ -159,18 +171,36 @@ const Test = function () {
           chrome.tabs.query(
             { active: true, currentWindow: true },
             async function (tabs) {
-              chrome.scripting
-                .executeScript({
-                  target: { tabId: tabs[0].id },
-                  files: ['contentScript.js'],
-                })
-                .then(() => {
-                  console.log('ran')
-
-                  chrome.tabs.sendMessage(tabs[0].id, {
-                    message: { isAudioEnabled, isVideoEnabled, recordOption },
-                  })
-                })
+              chrome.tabs.sendMessage(
+                tabs[0].id,
+                {
+                  message: { isAudioEnabled, isVideoEnabled, recordOption },
+                },
+                function (_request) {
+                  if (
+                    chrome.runtime.lastError?.message ===
+                    'Could not establish connection. Receiving end does not exist.'
+                  ) {
+                    console.log('ran error')
+                    chrome.scripting
+                      .executeScript({
+                        target: { tabId: tabs[0].id },
+                        files: ['contentScript.js'],
+                      })
+                      .then(() => {
+                        chrome.tabs.sendMessage(tabs[0].id, {
+                          message: {
+                            isAudioEnabled,
+                            isVideoEnabled,
+                            recordOption,
+                          },
+                        })
+                      })
+                    console.warn(chrome.runtime.lastError.message)
+                    // throw new Error('Error sending message via chrome.tabs.sendMessage');
+                  }
+                }
+              )
             }
           )
         }}
