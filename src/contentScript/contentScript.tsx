@@ -19,6 +19,9 @@ let recordOptions
 let recordInterval: NodeJS.Timeout
 let mediaRecorder: MediaRecorder | null
 let userStream: MediaStream = null
+let captureStream: MediaStream = null
+const fileReader = new FileReader()
+let data1 = []
 
 const ContentScript = function () {
   const [isRecording, setIsRecording] = useState(false)
@@ -26,7 +29,7 @@ const ContentScript = function () {
   const [recordTime, setRecordTime] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
   const [isCameraEnabled, setIsCameraEnabled] = useState(false)
-
+  const [videoId, setVideoId] = useState('')
   async function toggleCamera() {
     if (userStream) {
       // If a stream exists, stop it
@@ -57,8 +60,6 @@ const ContentScript = function () {
     displayMediaOptions: DisplayMediaStreamOptions
     isUserStreamEnabled: boolean
   }) {
-    let captureStream: MediaStream = null
-
     try {
       captureStream = await navigator.mediaDevices.getDisplayMedia(
         displayMediaOptions
@@ -75,17 +76,32 @@ const ContentScript = function () {
         setIsCameraEnabled(true)
       }
 
-      const data = []
       mediaRecorder = new MediaRecorder(captureStream)
 
       mediaRecorder.ondataavailable = function (e) {
-        data.push(e.data)
+        console.debug('Got blob data:', e.data)
+        if (e.data && e.data.size > 0) {
+          fileReader.readAsDataURL(e.data)
+        }
+        data1.push(e.data)
       }
-      mediaRecorder.onstart = function () {
+      mediaRecorder.onstart = async function () {
+        console.log('started')
         setRecordTime(0)
         recordInterval = setInterval(() => {
           setRecordTime(prev => prev + 1)
         }, 1000)
+        try {
+          const res = await fetch(
+            'https://hng-chrome.onrender.com/start-recording',
+            { method: 'POST' }
+          )
+          const { id, filename } = await res.json()
+          console.log(id)
+          setVideoId(id)
+        } catch (err) {
+          console.log(err)
+        }
       }
       mediaRecorder.onresume = function () {
         setIsPaused(false)
@@ -97,58 +113,7 @@ const ContentScript = function () {
         clearInterval(recordInterval)
         setIsPaused(true)
       }
-      mediaRecorder.start()
-
-      mediaRecorder.onstop = async function (e) {
-        const tracks = captureStream.getTracks()
-        tracks.forEach(track => {
-          track.stop()
-        })
-        captureStream = null
-        if (userStream) {
-          const userTracks = userStream.getTracks()
-          userTracks.forEach(track => {
-            track.stop()
-          })
-          userStream = null
-        }
-        console.log(
-          URL.createObjectURL(
-            new Blob(data, {
-              type: 'video/mp4',
-            })
-          )
-        )
-
-        const blobData = new Blob(data, {
-          type: 'video/mp4',
-        })
-        const formData = new FormData()
-
-        formData.append(
-          'video',
-          blobData,
-          `random${+Math.random().toFixed(2) * 1000}.mp4`
-        )
-        console.log(formData)
-        try {
-          const res = await fetch(
-            'https://mediaupload-uk0g.onrender.com/video/upload',
-            {
-              method: 'POST',
-              mode: 'no-cors',
-              body: formData,
-            }
-          )
-          const { url } = await res.json()
-          console.log(url)
-        } catch (err) {
-          console.log(err)
-        }
-
-        clearInterval(recordInterval)
-        setIsRecording(false)
-      }
+      mediaRecorder.start(10000)
     } catch (err) {
       console.error(`Error: ${err}`)
       setIsRecording(false)
@@ -172,12 +137,7 @@ const ContentScript = function () {
         video: {
           displaySurface: request.message.recordOption,
         },
-        audio: request.message.isAudioEnabled && {
-          echoCancellation: false,
-          noiseSuppression: false,
-          sampleRate: 22050,
-          suppressLocalAudioPlayback: false,
-        },
+        audio: request.message.isAudioEnabled,
         surfaceSwitching: 'include',
         selfBrowserSurface: 'exclude',
         systemAudio: 'include',
@@ -189,6 +149,67 @@ const ContentScript = function () {
     setIsCameraEnabled(request.message.isVideoEnabled)
     console.log('Message received in content script:', request.message)
   }
+
+  useEffect(() => {
+    fileReader.onload = function (event) {
+      // 'event.target.result' contains the Base64 data
+      const base64Data = event.target.result
+
+      fetch(`https://hng-chrome.onrender.com/append-chunk/${videoId}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          chunkData: base64Data,
+        }),
+      })
+        .then(res => res.json())
+        .then(data => console.log(data))
+    }
+
+    if (!mediaRecorder) return
+    mediaRecorder.onstop = async function (e) {
+      console.log('stopping stream')
+      if (!captureStream) return
+      const tracks = captureStream.getTracks()
+      tracks.forEach(track => {
+        track.stop()
+      })
+
+      captureStream = null
+      if (userStream) {
+        const userTracks = userStream.getTracks()
+        userTracks.forEach(track => {
+          track.stop()
+        })
+        userStream = null
+      }
+      clearInterval(recordInterval)
+      setIsRecording(false)
+      console.log(data1)
+      console.log(
+        URL.createObjectURL(
+          new Blob(data1, {
+            type: 'video/mp4',
+          })
+        )
+      )
+      try {
+        const res = await fetch(
+          `https://hng-chrome.onrender.com/end-recording/${videoId}`,
+          {
+            method: 'POST',
+          }
+        )
+        const data = await res.json()
+        console.log(data)
+      } catch (err) {
+        console.log('end-recording error')
+      }
+      window.open(
+        `https://screen-recorder-nine.vercel.app/new-video/${videoId}`,
+        '_blank'
+      )
+    }
+  }, [videoId, data1.length])
 
   useEffect(() => {
     chrome.runtime.onMessage.addListener(popupListener)
